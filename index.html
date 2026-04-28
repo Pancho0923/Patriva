@@ -17,6 +17,7 @@
     @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
     ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:4px}
     input::placeholder{color:#3a3a3a} input{caret-color:#00c853}
+    textarea::placeholder{color:#3a3a3a}
   </style>
 </head>
 <body>
@@ -24,10 +25,7 @@
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
 
-const EMAILJS_SERVICE  = "service_0ye4jmo";
-const EMAILJS_TEMPLATE = "template_bbf5dkr";
-const EMAILJS_KEY      = "ntzS4ZJQQY0895AKB";
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyoJEd71AL7pvpojizHyecYCTKHFshNclKeocmkaX1_08pHsgS1gugH7Fo_EX0_-GwK4g/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyGQszkephbbblmEqmej2AjbwSAane6Sr3AgJDD_pjcDsRGRo8F-SXnWHfQproOwOpY/exec";
 const TG_TOKEN  = "8740975803:AAGE1E0W8OjU6H1wPfjId-cAIG8pmspg82I";
 const TG_CHAT   = "5250720736";
 
@@ -66,34 +64,6 @@ function validateEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e.trim());
 async function sendToSheets(data){
   try{await fetch(GOOGLE_SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});}
   catch(e){console.error(e);}
-}
-
-async function sendEmail(data) {
-  try {
-    const tipo = data.tipo_seguro || "seguro";
-    let detalle = "";
-    if (tipo.includes("auto")) {
-      detalle = "Vehiculo: "+data.marca+" "+data.modelo+" "+data.anio+" - Patente: "+data.patente+" - Comuna: "+data.comuna+" - Cobertura: "+data.cobertura;
-    } else if (tipo.includes("hogar")) {
-      detalle = "Direccion: "+[data.calle,data.numero,data.depto,data.comuna].filter(Boolean).join(", ")+" - Tipo: "+data.tipo+" "+data.construccion+" "+data.uso+" - Edificio: UF"+data.montoEdificio+" Contenido: UF"+data.montoContenido;
-    } else if (tipo.includes("condominio")) {
-      detalle = "Direccion: "+data.direccion+" - Uso: "+data.uso+" - Torres: "+data.torres+" - Pisos: "+data.pisos+" - Espacios: UF"+data.montoEspacios+" Deptos: UF"+data.montoDeptos;
-    } else if (tipo.includes("contacto")) {
-      detalle = "Consulta: "+(data.consulta||"");
-    }
-    await window.emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
-      tipo_seguro: tipo.toUpperCase(),
-      nombre: data.nombre || data.contratante || "",
-      rut: data.rut || "",
-      detalle: detalle,
-      canal: data.canal || "",
-      contacto: data.contacto || "",
-      timestamp: data.timestamp || "",
-      title: tipo.toUpperCase(),
-      email: data.contacto || "",
-      consulta: data.consulta || ""
-    });
-  } catch(e) { console.error("Email error:", e); }
 }
 
 async function sendTelegram(data) {
@@ -392,7 +362,7 @@ const App = function App(){
     const tipoLabel=quoteType==="auto"?"seguro de auto":quoteType==="hogar"?"seguro hogar":"seguro condominio";
     const final={...quoteData,tipo_seguro:tipoLabel,canal:data.canal,contacto:data.value,timestamp:new Date().toLocaleString("es-CL")};
     setStep("done");setLoading(true);
-    await Promise.all([sendToSheets(final), sendEmail(final)]);
+    await sendToSheets(final);
     setLoading(false);
     pushBot(`¡Listo${firstName?", "+firstName:""}! ✅\n\nUn ejecutivo de **Patriva** revisará tu solicitud de **${tipoLabel}** y te enviará la cotización al ${data.canal==="email"?"correo":"WhatsApp"} que indicaste.\n\n¡Gracias por confiar en Patriva!`);
   };
@@ -409,7 +379,7 @@ const App = function App(){
       timestamp:new Date().toLocaleString("es-CL")
     };
     setStep("done");setLoading(true);
-    await sendEmail(final);
+    await sendToSheets(final);
     setLoading(false);
     pushBot(`¡Gracias, ${data.nombre.split(" ")[0]}! 👍\n\nUn ejecutivo de **Patriva** se pondrá en contacto contigo a la brevedad por ${data.canal==="email"?"correo":"WhatsApp"}.`);
   };
