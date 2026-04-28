@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Patriva — Tu asesor de seguros</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0a; font-family: 'DM Sans', sans-serif; }
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:4px}
+    input::placeholder{color:#3a3a3a} input{caret-color:#00c853}
+    textarea::placeholder{color:#3a3a3a}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwq4wFuoUH1ATEmIV7Kk6puXY0biTwTCLm3mrpJF5ObckcT6iPcB4jBiK_yuv97AtXrSQ/exec";
+const TG_TOKEN  = "8740975803:AAGE1E0W8OjU6H1wPfjId-cAIG8pmspg82I";
+const TG_CHAT   = "5250720736";
+
+const C = {
+  bg:"#111111", surface:"#1a1a1a", surface2:"#222222",
+  border:"rgba(0,200,83,0.18)", borderHover:"#00c853",
+  green:"#00c853", greenDark:"#00a846", greenGlow:"rgba(0,200,83,0.25)", greenDim:"rgba(0,200,83,0.08)",
+  text:"#ffffff", textMid:"#a0a0a0", textDim:"#555555",
+  error:"#ff5252", msgBot:"#1e1e1e",
+};
+
+// ─── RUT ──────────────────────────────────────────────────────
+function validateRUT(rut) {
+  const clean = rut.replace(/[.\-\s]/g,"").toUpperCase();
+  if(!/^\d{7,8}[0-9K]$/.test(clean)) return false;
+  const body=clean.slice(0,-1), dv=clean.slice(-1);
+  let sum=0,mul=2;
+  for(let i=body.length-1;i>=0;i--){sum+=parseInt(body[i])*mul;mul=mul===7?2:mul+1;}
+  const exp=11-(sum%11);
+  return dv===(exp===11?"0":exp===10?"K":String(exp));
+}
+function liveFormatRUT(raw) {
+  const clean=raw.replace(/[^0-9kK]/g,"").toUpperCase();
+  if(clean.length<=1) return clean;
+  const body=clean.slice(0,-1),dv=clean.slice(-1);
+  return body.length>=7?body+"-"+dv:clean;
+}
+function finalFormatRUT(rut) {
+  const clean=rut.replace(/[.\-\s]/g,"").toUpperCase();
+  if(clean.length<2) return clean;
+  const body=clean.slice(0,-1),dv=clean.slice(-1);
+  return body.replace(/\B(?=(\d{3})+(?!\d))/g,".")+"-"+dv;
+}
+function validateEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e.trim());}
+
+async function sendToSheets(data){
+  try{await fetch(GOOGLE_SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});}
+  catch(e){console.error(e);}
+}
+
+async function sendTelegram(data) {
+  try {
+    const tipo = data.tipo_seguro || "seguro";
+    const nombre = data.nombre || data.contratante || "";
+    const contacto = data.canal === "email" ? "📧 " + data.contacto : "💬 " + data.contacto;
+
+    let detalle = "";
+    if (tipo.includes("auto")) {
+      detalle = `🚗 ${data.marca} ${data.modelo} ${data.anio} · ${data.patente}\n📍 ${data.comuna}\n🛡️ ${data.cobertura}`;
+    } else if (tipo.includes("hogar")) {
+      detalle = `🏠 ${[data.calle, data.numero, data.depto, data.comuna].filter(Boolean).join(", ")}\n🔨 ${data.construccion} · ${data.uso} · ${data.tipo}\n💰 Edificio: UF ${data.montoEdificio} · Contenido: UF ${data.montoContenido}`;
+    } else if (tipo.includes("contacto ejecutivo")) {
+      detalle = "📝 " + data.consulta;
+    } else if (tipo.includes("condominio")) {
+      detalle = `🏢 ${data.direccion}\n📊 ${data.uso} · ${data.torres} torre(s) · ${data.pisos} pisos · ${data.unidades} uds.\n💰 Esp. comunes: UF ${data.montoEspacios} · Deptos: UF ${data.montoDeptos}`;
+    }
+
+    const msg = `🔔 *Nueva cotización Patriva*\n\n👤 ${nombre}\n🪪 ${data.rut}\n📋 ${tipo.toUpperCase()}\n\n${detalle}\n\n${contacto}\n\n🕐 ${data.timestamp}`;
+
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TG_CHAT, text: msg, parse_mode: "Markdown" })
+    });
+  } catch(e) { console.error("Telegram error:", e); }
+}
+
+async function callClaude(q){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:`Eres el asistente virtual de Patriva, tu asesor de seguros en Chile. Respondes en español, de forma clara, cercana y profesional. Usa **negritas** para puntos clave. Menciona precios en UF o pesos chilenos cuando sea relevante. Termina siempre invitando a cotizar o a hacer otra consulta.`,messages:[{role:"user",content:q}]})});
+  const d=await res.json();
+  return d.content?.[0]?.text||"Lo siento, no pude procesar tu consulta.";
+}
+
+// ─── UI ATOMS ─────────────────────────────────────────────────
+function TypingDots(){
+  return <div style={{display:"flex",gap:5,padding:"13px 18px",background:C.msgBot,borderRadius:"18px 18px 18px 4px",width:"fit-content",border:`1px solid ${C.border}`}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.green,animation:"bounce 1.2s infinite",animationDelay:`${i*0.18}s`}}/>)}</div>;
+}
+function BotAvatar(){
+  return <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.green},${C.greenDark})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,alignSelf:"flex-end",boxShadow:`0 2px 10px ${C.greenGlow}`}}>🏠</div>;
+}
+function BotMsg({children}){
+  return <div style={{display:"flex",gap:10,marginBottom:14,animation:"fadeUp 0.3s ease"}}><BotAvatar/><div style={{background:C.msgBot,border:`1px solid ${C.border}`,borderRadius:"18px 18px 18px 4px",padding:"12px 16px",maxWidth:"78%",color:"#e0e0e0",fontSize:14,lineHeight:1.65}}>{children}</div></div>;
+}
+function UserMsg({children}){
+  return <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14,animation:"fadeUp 0.3s ease"}}><div style={{background:`linear-gradient(135deg,${C.green},${C.greenDark})`,borderRadius:"18px 18px 4px 18px",padding:"12px 16px",maxWidth:"78%",color:"#fff",fontSize:14,lineHeight:1.65,boxShadow:`0 2px 12px ${C.greenGlow}`}}>{children}</div></div>;
+}
+function RichText({text}){
+  return <>{text.split(/(\*\*[^*]+\*\*)/).map((p,i)=>p.startsWith("**")&&p.endsWith("**")?<strong key={i} style={{color:C.green}}>{p.slice(2,-2)}</strong>:p.split("\n").map((l,j,a)=><span key={`${i}-${j}`}>{l}{j<a.length-1?<br/>:null}</span>))}</>;
+}
+function Lbl({children}){return <label style={{display:"block",color:C.textDim,fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>{children}</label>;}
+function FieldWrap({children,error,hint}){
+  return <div style={{marginBottom:11}}>{children}{hint&&!error&&<div style={{color:C.textDim,fontSize:11,marginTop:3}}>{hint}</div>}{error&&<div style={{color:C.error,fontSize:11,marginTop:3}}>⚠ {error}</div>}</div>;
+}
+const iStyle=(err)=>({width:"100%",padding:"9px 12px",background:"#0d0d0d",border:`1px solid ${err?C.error:C.border}`,borderRadius:10,color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",transition:"border-color 0.2s"});
+
+function TInput({label,placeholder,value,onChange,error,hint,type="text",maxLength}){
+  return <FieldWrap error={error} hint={hint}><Lbl>{label}</Lbl><input type={type} value={value} placeholder={placeholder} maxLength={maxLength} onChange={e=>onChange(e.target.value)} style={iStyle(!!error)} onFocus={e=>e.target.style.borderColor=C.green} onBlur={e=>e.target.style.borderColor=error?C.error:C.border}/></FieldWrap>;
+}
+function RutInput({label,rawValue,onRawChange,error,hint}){
+  const handleChange=(val)=>{const s=val.replace(/[^0-9kK]/g,"").toUpperCase().slice(0,9);onRawChange(s);};
+  return <FieldWrap error={error} hint={hint||"Escribe solo números — el guión aparece automático"}><Lbl>{label||"RUT"}</Lbl><input type="text" value={liveFormatRUT(rawValue)} placeholder="ej: 12345678-9" maxLength={10} onChange={e=>handleChange(e.target.value)} style={iStyle(!!error)} onFocus={e=>e.target.style.borderColor=C.green} onBlur={e=>e.target.style.borderColor=error?C.error:C.border}/></FieldWrap>;
+}
+function SelectInput({label,options,value,onChange,error}){
+  return <FieldWrap error={error}><Lbl>{label}</Lbl><div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{options.map(opt=><button key={opt} onClick={()=>onChange(opt)} style={{padding:"7px 13px",borderRadius:8,border:`1px solid ${value===opt?C.green:C.border}`,background:value===opt?"rgba(0,200,83,0.15)":"transparent",color:value===opt?C.green:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>{opt}</button>)}</div></FieldWrap>;
+}
+function YesNo({label,value,onChange,error}){return <SelectInput label={label} options={["Sí","No"]} value={value} onChange={onChange} error={error}/>;}
+function CheckboxGroup({label,options,value=[],onChange}){
+  const toggle=(opt)=>onChange(value.includes(opt)?value.filter(v=>v!==opt):[...value,opt]);
+  return <FieldWrap><Lbl>{label}</Lbl><div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{options.map(opt=><button key={opt} onClick={()=>toggle(opt)} style={{padding:"7px 13px",borderRadius:8,border:`1px solid ${value.includes(opt)?C.green:C.border}`,background:value.includes(opt)?"rgba(0,200,83,0.15)":"transparent",color:value.includes(opt)?C.green:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>{value.includes(opt)?"✓ ":""}{opt}</button>)}</div></FieldWrap>;
+}
+function UFInput({label,value,onChange,error,hint}){
+  return <FieldWrap error={error} hint={hint||"Ingresa 0 si no aplica"}><Lbl>{label}</Lbl><div style={{display:"flex",border:`1px solid ${error?C.error:C.border}`,borderRadius:10,overflow:"hidden",background:"#0d0d0d"}} onFocusCapture={e=>e.currentTarget.style.borderColor=C.green} onBlurCapture={e=>e.currentTarget.style.borderColor=error?C.error:C.border}><div style={{padding:"9px 10px 9px 12px",color:C.green,fontSize:13,fontWeight:700,flexShrink:0,borderRight:`1px solid ${C.border}`,background:"rgba(0,200,83,0.06)"}}>UF</div><input type="number" value={value} placeholder="ej: 2500" onChange={e=>onChange(e.target.value)} style={{flex:1,padding:"9px 12px",background:"transparent",border:"none",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/></div></FieldWrap>;
+}
+function WspInput({value,onChange,error}){
+  return <FieldWrap error={error} hint="Solo los 8 dígitos después del +569"><Lbl>Tu número de WhatsApp</Lbl><div style={{display:"flex",border:`1px solid ${error?C.error:C.border}`,borderRadius:10,overflow:"hidden",background:"#0d0d0d",transition:"border-color 0.2s"}} onFocusCapture={e=>e.currentTarget.style.borderColor=C.green} onBlurCapture={e=>e.currentTarget.style.borderColor=error?C.error:C.border}><div style={{padding:"9px 10px 9px 12px",color:C.green,fontSize:13,fontWeight:600,flexShrink:0,borderRight:`1px solid ${C.border}`,background:"rgba(0,200,83,0.06)"}}>+569</div><input type="tel" value={value} placeholder="12345678" maxLength={8} onChange={e=>onChange(e.target.value.replace(/\D/g,"").slice(0,8))} style={{flex:1,padding:"9px 12px",background:"transparent",border:"none",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/></div></FieldWrap>;
+}
+function ActionBtn({children,onClick,disabled=false,variant="primary"}){
+  return <button onClick={onClick} disabled={disabled} style={{width:"100%",padding:"11px 16px",borderRadius:12,fontSize:14,fontWeight:700,fontFamily:"inherit",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,transition:"all 0.2s",marginBottom:8,background:variant==="secondary"?C.greenDim:`linear-gradient(135deg,${C.green},${C.greenDark})`,color:variant==="secondary"?C.green:"#000",border:variant==="secondary"?`1px solid ${C.border}`:"none"}} onMouseEnter={e=>{if(!disabled)e.target.style.opacity="0.82";}} onMouseLeave={e=>{if(!disabled)e.target.style.opacity="1";}}>{children}</button>;
+}
+function MenuBtn({item,onClick}){
+  return <button onClick={()=>onClick(item)} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 14px",marginBottom:7,background:C.greenDim,border:`1px solid ${C.border}`,borderRadius:12,color:C.green,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.target.style.background="rgba(0,200,83,0.16)";e.target.style.borderColor=C.green;}} onMouseLeave={e=>{e.target.style.background=C.greenDim;e.target.style.borderColor=C.border;}}>{item.emoji} {item.label}</button>;
+}
+
+
+// ─── CONTACTO EJECUTIVO ───────────────────────────────────────
+function StepEjecutivo({onSubmit}){
+  const [nombre,setNombre]=useState("");
+  const [consulta,setConsulta]=useState("");
+  const [canal,setCanal]=useState(null);
+  const [contacto,setContacto]=useState("");
+  const [wspVal,setWspVal]=useState("");
+  const [errors,setErrors]=useState({});
+
+  const validate=()=>{
+    const e={};
+    if(!nombre.trim()||nombre.trim().split(" ").filter(Boolean).length<2) e.nombre="Ingresa nombre y apellido";
+    if(!consulta.trim()) e.consulta="Escribe tu consulta";
+    if(!canal) e.canal="Selecciona un canal";
+    if(canal==="email"&&!validateEmail(contacto)) e.contacto="Correo no válido";
+    if(canal==="whatsapp"&&wspVal.length!==8) e.contacto="Ingresa exactamente 8 dígitos";
+    setErrors(e);
+    return Object.keys(e).length===0;
+  };
+
+  const handleSubmit=()=>{
+    if(validate()){
+      const full=canal==="email"?contacto:"+569"+wspVal;
+      onSubmit({nombre,consulta,canal,contacto:full});
+    }
+  };
+
+  return <div style={{animation:"fadeUp 0.3s ease"}}>
+    <TInput label="Tu nombre completo" placeholder="ej: Juan Pérez González" value={nombre} onChange={setNombre} error={errors.nombre}/>
+    <FieldWrap error={errors.consulta}>
+      <Lbl>Tu consulta</Lbl>
+      <textarea value={consulta} onChange={e=>setConsulta(e.target.value)} placeholder="Escribe tu pregunta o consulta aquí..." rows={3} style={{width:"100%",padding:"9px 12px",background:"#0d0d0d",border:`1px solid ${errors.consulta?C.error:C.border}`,borderRadius:10,color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",resize:"none",lineHeight:1.5,caretColor:"#00c853"}} onFocus={e=>e.target.style.borderColor=C.green} onBlur={e=>e.target.style.borderColor=errors.consulta?C.error:C.border}/>
+    </FieldWrap>
+    <div style={{color:C.textMid,fontSize:12,marginBottom:10}}>¿Cómo prefieres que te contactemos?</div>
+    <div style={{display:"flex",gap:8,marginBottom:14}}>
+      {[{id:"email",label:"📧 Email"},{id:"whatsapp",label:"💬 WhatsApp"}].map(c=>(
+        <button key={c.id} onClick={()=>{setCanal(c.id);setErrors({});}} style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600,transition:"all 0.2s",border:`1px solid ${canal===c.id?C.green:C.border}`,background:canal===c.id?"rgba(0,200,83,0.15)":"transparent",color:canal===c.id?C.green:C.textDim}}>{c.label}</button>
+      ))}
+    </div>
+    {canal==="email"&&<TInput label="Tu correo electrónico" placeholder="nombre@gmail.com" value={contacto} onChange={v=>{setContacto(v);setErrors(p=>({...p,contacto:""}));}} error={errors.contacto} type="email"/>}
+    {canal==="whatsapp"&&<WspInput value={wspVal} onChange={v=>{setWspVal(v);setErrors(p=>({...p,contacto:""}));}} error={errors.contacto}/>}
+    {errors.canal&&<div style={{color:C.error,fontSize:11,marginBottom:8}}>⚠ {errors.canal}</div>}
+    <ActionBtn onClick={handleSubmit} disabled={!nombre.trim()||!consulta.trim()||!canal}>Enviar consulta →</ActionBtn>
+  </div>;
+}
+
+const MAIN_MENU=[
+  {id:"auto",      emoji:"🚗", label:"Cotizar seguro de auto"},
+  {id:"hogar",     emoji:"🏠", label:"Cotizar seguro hogar"},
+  {id:"condominio",emoji:"🏢", label:"Cotizar seguro condominio"},
+  {id:"contacto_ejecutivo", emoji:"💬", label:"Contactar a un ejecutivo"},
+];
+
+// ─── SHARED: CONTACTO ─────────────────────────────────────────
+function StepContacto({onSubmit}){
+  const [canal,setCanal]=useState(null);
+  const [emailVal,setEmailVal]=useState("");
+  const [wspVal,setWspVal]=useState("");
+  const [error,setError]=useState("");
+  const validate=()=>{
+    if(canal==="email"){if(!validateEmail(emailVal)){setError("Correo no válido. Ej: nombre@gmail.com");return false;}}
+    else{if(wspVal.length!==8){setError("Debes ingresar exactamente 8 dígitos");return false;}}
+    setError("");return true;
+  };
+  return <div style={{animation:"fadeUp 0.3s ease"}}>
+    <div style={{color:C.textMid,fontSize:12,marginBottom:10}}>¿Cómo prefieres recibir tu cotización?</div>
+    <div style={{display:"flex",gap:8,marginBottom:14}}>
+      {[{id:"email",label:"📧 Email"},{id:"whatsapp",label:"💬 WhatsApp"}].map(c=>(
+        <button key={c.id} onClick={()=>{setCanal(c.id);setError("");}} style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600,transition:"all 0.2s",border:`1px solid ${canal===c.id?C.green:C.border}`,background:canal===c.id?"rgba(0,200,83,0.15)":"transparent",color:canal===c.id?C.green:C.textDim}}>{c.label}</button>
+      ))}
+    </div>
+    {canal==="email"&&<TInput label="Tu correo electrónico" placeholder="nombre@gmail.com" value={emailVal} onChange={v=>{setEmailVal(v);setError("");}} error={error} type="email"/>}
+    {canal==="whatsapp"&&<WspInput value={wspVal} onChange={v=>{setWspVal(v);setError("");}} error={error}/>}
+    <ActionBtn onClick={()=>{if(canal&&validate()){onSubmit({canal,value:canal==="email"?emailVal.trim():"+569"+wspVal});}}} disabled={!canal||(canal==="email"?!emailVal.trim():wspVal.length<8)}>Enviar solicitud →</ActionBtn>
+  </div>;
+}
+
+// ─── AUTO ─────────────────────────────────────────────────────
+function StepAutoVehiculo({onSubmit}){
+  const [marca,setMarca]=useState("");const [modelo,setModelo]=useState("");const [anio,setAnio]=useState("");const [patente,setPatente]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!marca.trim())e.marca="Ingresa la marca";if(!modelo.trim())e.modelo="Ingresa el modelo";const y=parseInt(anio);if(!anio||isNaN(y)||y<1980||y>new Date().getFullYear()+1)e.anio="Año no válido";if(!patente.trim()||patente.trim().length<4)e.patente="Ingresa la patente";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><TInput label="Marca" placeholder="ej: Toyota" value={marca} onChange={setMarca} error={errors.marca}/><TInput label="Modelo" placeholder="ej: Yaris" value={modelo} onChange={setModelo} error={errors.modelo}/><TInput label="Año" placeholder="ej: 2021" value={anio} onChange={setAnio} error={errors.anio} type="number"/><TInput label="Patente" placeholder="ej: ABCD12" value={patente} onChange={v=>setPatente(v.toUpperCase())} error={errors.patente} maxLength={6}/><ActionBtn onClick={()=>{if(validate())onSubmit({marca,modelo,anio,patente});}}>Continuar →</ActionBtn></div>;
+}
+function StepAutoPersonal({onSubmit}){
+  const [nombre,setNombre]=useState("");const [rutRaw,setRutRaw]=useState("");const [comuna,setComuna]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!nombre.trim()||nombre.trim().split(" ").filter(Boolean).length<2)e.nombre="Ingresa nombre y apellido";if(!rutRaw.trim())e.rut="Ingresa tu RUT";else if(!validateRUT(rutRaw))e.rut="RUT no válido. Verifica los dígitos.";if(!comuna.trim())e.comuna="Ingresa tu comuna";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><TInput label="Nombre completo" placeholder="ej: Juan Pérez González" value={nombre} onChange={setNombre} error={errors.nombre}/><RutInput rawValue={rutRaw} onRawChange={setRutRaw} error={errors.rut}/><TInput label="Comuna" placeholder="ej: Las Condes" value={comuna} onChange={setComuna} error={errors.comuna}/><ActionBtn onClick={()=>{if(validate())onSubmit({nombre,rut:finalFormatRUT(rutRaw),comuna});}}>Continuar →</ActionBtn></div>;
+}
+function StepAutoCobertura({onSubmit}){
+  const [sel,setSel]=useState(null);
+  const opts=[{id:"todo_riesgo",emoji:"🛡️",label:"Todo Riesgo",desc:"Cobertura completa: robo, choque, incendio y daños propios y a terceros."},{id:"pt_rc",emoji:"⚡",label:"PT + RC",desc:"Pérdida Total + Responsabilidad Civil. Lo esencial bien cubierto."}];
+  return <div style={{animation:"fadeUp 0.3s ease"}}>{opts.map(o=><div key={o.id} onClick={()=>setSel(o.id)} style={{padding:"12px 14px",borderRadius:12,marginBottom:8,cursor:"pointer",border:`1px solid ${sel===o.id?C.green:C.border}`,background:sel===o.id?"rgba(0,200,83,0.1)":C.greenDim,transition:"all 0.2s"}}><div style={{color:C.text,fontWeight:600,fontSize:14,marginBottom:3}}>{o.emoji} {o.label}</div><div style={{color:C.textMid,fontSize:12}}>{o.desc}</div>{sel===o.id&&<div style={{color:C.green,fontSize:11,marginTop:5,fontWeight:600}}>✓ Seleccionado</div>}</div>)}<div style={{height:8}}/><ActionBtn onClick={()=>{if(sel)onSubmit(opts.find(o=>o.id===sel));}} disabled={!sel}>Continuar →</ActionBtn></div>;
+}
+
+// ─── HOGAR ────────────────────────────────────────────────────
+function StepHogarPersonal({onSubmit}){
+  const [nombre,setNombre]=useState("");const [rutRaw,setRutRaw]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!nombre.trim()||nombre.trim().split(" ").filter(Boolean).length<2)e.nombre="Ingresa nombre y apellido";if(!rutRaw.trim())e.rut="Ingresa tu RUT";else if(!validateRUT(rutRaw))e.rut="RUT no válido. Verifica los dígitos.";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><TInput label="Nombre completo del propietario" placeholder="ej: Juan Pérez González" value={nombre} onChange={setNombre} error={errors.nombre}/><RutInput rawValue={rutRaw} onRawChange={setRutRaw} error={errors.rut}/><ActionBtn onClick={()=>{if(validate())onSubmit({nombre,rut:finalFormatRUT(rutRaw)});}}>Continuar →</ActionBtn></div>;
+}
+function StepHogarDireccion({onSubmit}){
+  const [calle,setCalle]=useState("");const [numero,setNumero]=useState("");const [depto,setDepto]=useState("");const [estacionamiento,setEstacionamiento]=useState("");const [bodega,setBodega]=useState("");const [comuna,setComuna]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!calle.trim())e.calle="Ingresa la calle";if(!numero.trim())e.numero="Ingresa el número";if(!comuna.trim())e.comuna="Ingresa la comuna";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><TInput label="Calle" placeholder="ej: Av. Providencia" value={calle} onChange={setCalle} error={errors.calle}/><TInput label="Número" placeholder="ej: 1234" value={numero} onChange={setNumero} error={errors.numero}/><TInput label="Depto / Casa (opcional)" placeholder="ej: Depto 501" value={depto} onChange={setDepto}/><TInput label="N° Estacionamiento (opcional)" placeholder="ej: E-12" value={estacionamiento} onChange={setEstacionamiento}/><TInput label="N° Bodega (opcional)" placeholder="ej: B-5" value={bodega} onChange={setBodega}/><TInput label="Comuna" placeholder="ej: Providencia" value={comuna} onChange={setComuna} error={errors.comuna}/><ActionBtn onClick={()=>{if(validate())onSubmit({calle,numero,depto,estacionamiento,bodega,comuna});}}>Continuar →</ActionBtn></div>;
+}
+function StepHogarDetalle({onSubmit}){
+  const [construccion,setConstruccion]=useState("");const [uso,setUso]=useState("");const [ubicacion,setUbicacion]=useState("");const [pisos,setPisos]=useState("");const [anio,setAnio]=useState("");const [hipotecario,setHipotecario]=useState("");const [tipo,setTipo]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!construccion)e.construccion="Selecciona tipo de construcción";if(!uso)e.uso="Selecciona el uso";if(!ubicacion)e.ubicacion="Selecciona la ubicación";if(!pisos.trim())e.pisos="Ingresa N° de pisos";if(!anio.trim())e.anio="Ingresa el año";if(!hipotecario)e.hipotecario="Selecciona una opción";if(!tipo)e.tipo="Selecciona el tipo";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}>
+    <SelectInput label="Tipo de construcción" options={["Ligero","Sólido","Mixto"]} value={construccion} onChange={setConstruccion} error={errors.construccion}/>
+    <SelectInput label="Uso" options={["Vacacional","Permanente"]} value={uso} onChange={setUso} error={errors.uso}/>
+    <SelectInput label="Ubicación" options={["Urbano","Rural"]} value={ubicacion} onChange={setUbicacion} error={errors.ubicacion}/>
+    <SelectInput label="Tipo" options={["Casa","Depto"]} value={tipo} onChange={setTipo} error={errors.tipo}/>
+    <TInput label="N° de pisos total" placeholder="ej: 2" value={pisos} onChange={setPisos} error={errors.pisos} type="number"/>
+    <TInput label="Año de construcción" placeholder="ej: 1998" value={anio} onChange={setAnio} error={errors.anio} type="number"/>
+    <YesNo label="¿Posee crédito hipotecario?" value={hipotecario} onChange={setHipotecario} error={errors.hipotecario}/>
+    <ActionBtn onClick={()=>{if(validate())onSubmit({construccion,uso,ubicacion,tipo,pisos,anio,hipotecario});}}>Continuar →</ActionBtn>
+  </div>;
+}
+function StepHogarMontos({onSubmit}){
+  const [edificio,setEdificio]=useState("");const [contenido,setContenido]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(edificio===""&&contenido==="")e.general="Ingresa al menos un monto asegurado";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><UFInput label="Monto asegurado Edificio" value={edificio} onChange={setEdificio}/><UFInput label="Monto asegurado Contenido" value={contenido} onChange={setContenido}/>{errors.general&&<div style={{color:C.error,fontSize:11,marginBottom:8}}>⚠ {errors.general}</div>}<ActionBtn onClick={()=>{if(validate())onSubmit({montoEdificio:edificio||"0",montoContenido:contenido||"0"});}}>Continuar →</ActionBtn></div>;
+}
+
+// ─── CONDOMINIO ───────────────────────────────────────────────
+function StepCondContratante({onSubmit}){
+  const [nombre,setNombre]=useState("");const [rutRaw,setRutRaw]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!nombre.trim())e.nombre="Ingresa el nombre del contratante";if(!rutRaw.trim())e.rut="Ingresa el RUT";else if(!validateRUT(rutRaw))e.rut="RUT no válido. Verifica los dígitos.";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><TInput label="Contratante (Comunidad o Constructora)" placeholder="ej: Comunidad Edificio Las Palmas" value={nombre} onChange={setNombre} error={errors.nombre}/><RutInput label="RUT empresa" rawValue={rutRaw} onRawChange={setRutRaw} error={errors.rut}/><ActionBtn onClick={()=>{if(validate())onSubmit({contratante:nombre,rut:finalFormatRUT(rutRaw)});}}>Continuar →</ActionBtn></div>;
+}
+function StepCondDireccion({onSubmit}){
+  const [dir,setDir]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!dir.trim())e.dir="Ingresa la dirección";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><TInput label="Dirección completa del condominio" placeholder="ej: Av. Los Leones 1234, Providencia" value={dir} onChange={setDir} error={errors.dir}/><ActionBtn onClick={()=>{if(validate())onSubmit({direccion:dir});}}>Continuar →</ActionBtn></div>;
+}
+function StepCondDetalle({onSubmit}){
+  const [uso,setUso]=useState("");const [anio,setAnio]=useState("");const [torres,setTorres]=useState("");const [pisos,setPisos]=useState("");const [sub,setSub]=useState("");const [unidades,setUnidades]=useState("");const [ascensores,setAscensores]=useState("");const [cantAsc,setCantAsc]=useState("");const [piscina,setPiscina]=useState("");const [locales,setLocales]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(!uso)e.uso="Selecciona el uso";if(!anio.trim())e.anio="Ingresa el año";if(!torres.trim())e.torres="Ingresa N° de torres";if(!pisos.trim())e.pisos="Ingresa N° de pisos";if(!sub.trim())e.sub="Ingresa N° de subterráneos";if(!unidades.trim())e.unidades="Ingresa cantidad de unidades";if(!ascensores)e.ascensores="Selecciona una opción";if(ascensores==="Sí"&&!cantAsc.trim())e.cantAsc="Ingresa la cantidad";if(!piscina)e.piscina="Selecciona una opción";if(!locales)e.locales="Selecciona una opción";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}>
+    <SelectInput label="Uso" options={["Habitacional","Comercial","Mixto"]} value={uso} onChange={setUso} error={errors.uso}/>
+    <TInput label="Año de construcción" placeholder="ej: 2005" value={anio} onChange={setAnio} error={errors.anio} type="number"/>
+    <TInput label="N° de torres" placeholder="ej: 2" value={torres} onChange={setTorres} error={errors.torres} type="number"/>
+    <TInput label="N° de pisos" placeholder="ej: 15" value={pisos} onChange={setPisos} error={errors.pisos} type="number"/>
+    <TInput label="N° de subterráneos" placeholder="ej: 2" value={sub} onChange={setSub} error={errors.sub} type="number"/>
+    <TInput label="Cantidad total de unidades" placeholder="ej: 120" value={unidades} onChange={setUnidades} error={errors.unidades} type="number"/>
+    <YesNo label="¿Tiene ascensores?" value={ascensores} onChange={setAscensores} error={errors.ascensores}/>
+    {ascensores==="Sí"&&<TInput label="Cantidad de ascensores" placeholder="ej: 3" value={cantAsc} onChange={setCantAsc} error={errors.cantAsc} type="number"/>}
+    <YesNo label="¿Cuenta con piscina?" value={piscina} onChange={setPiscina} error={errors.piscina}/>
+    <YesNo label="¿Existencia de locales comerciales?" value={locales} onChange={setLocales} error={errors.locales}/>
+    <ActionBtn onClick={()=>{if(validate())onSubmit({uso,anio,torres,pisos,subterraneos:sub,unidades,ascensores,cantAscensores:ascensores==="Sí"?cantAsc:"N/A",piscina,locales});}}>Continuar →</ActionBtn>
+  </div>;
+}
+function StepCondSeguridad({onSubmit}){
+  const [medidas,setMedidas]=useState([]);
+  const opts=["Red seca","Red húmeda","Extintores","CCTV","Concertina"];
+  return <div style={{animation:"fadeUp 0.3s ease"}}><CheckboxGroup label="Medidas de seguridad (selecciona las que apliquen)" options={opts} value={medidas} onChange={setMedidas}/><div style={{color:C.textDim,fontSize:11,marginBottom:12}}>Puedes continuar sin seleccionar si no aplica ninguna.</div><ActionBtn onClick={()=>onSubmit({medidas:medidas.length>0?medidas.join(", "):"Ninguna"})}>Continuar →</ActionBtn></div>;
+}
+function StepCondMontos({onSubmit}){
+  const [espacios,setEspacios]=useState("");const [deptos,setDeptos]=useState("");const [errors,setErrors]=useState({});
+  const validate=()=>{const e={};if(espacios===""&&deptos==="")e.general="Ingresa al menos un monto asegurado";setErrors(e);return Object.keys(e).length===0;};
+  return <div style={{animation:"fadeUp 0.3s ease"}}><UFInput label="Monto Espacios Comunes" value={espacios} onChange={setEspacios}/><UFInput label="Monto Departamentos" value={deptos} onChange={setDeptos}/>{errors.general&&<div style={{color:C.error,fontSize:11,marginBottom:8}}>⚠ {errors.general}</div>}<ActionBtn onClick={()=>{if(validate())onSubmit({montoEspacios:espacios||"0",montoDeptos:deptos||"0"});}}>Continuar →</ActionBtn></div>;
+}
+
+// ─── MAIN ─────────────────────────────────────────────────────
+const App = function App(){
+  const [chatLog,setChatLog]=useState([]);
+  const [step,setStep]=useState("menu");
+  const [quoteData,setQuoteData]=useState({});
+  const [quoteType,setQuoteType]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [faqInput,setFaqInput]=useState("");
+  const bottomRef=useRef(null);
+
+  const pushBot=(c)=>setChatLog(p=>[...p,{role:"bot",content:c}]);
+  const pushUser=(c)=>setChatLog(p=>[...p,{role:"user",content:c}]);
+
+  useEffect(()=>{pushBot("¡Hola! Bienvenido/a a **Patriva** 🏠\n\nSoy tu asesor digital de seguros. ¿En qué te puedo ayudar hoy?");},[]);
+  useEffect(()=>{setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:"smooth"}),80);},[chatLog,step,loading]);
+
+  const go=(s,msg)=>setTimeout(()=>{pushBot(msg);setStep(s);},450);
+
+  const handleMenu=(item)=>{
+    pushUser(item.emoji+" "+item.label);setQuoteType(item.id);
+    if(item.id==="auto") go("auto_vehiculo","Perfecto 🚗 Empecemos con los datos de tu vehículo:");
+    else if(item.id==="hogar") go("hogar_personal","Perfecto 🏠 Empecemos con los datos del **propietario legal** del inmueble:");
+    else if(item.id==="condominio") go("cond_contratante","Perfecto 🏢 Empecemos con los datos del **contratante**:");
+    else if(item.id==="contacto_ejecutivo") go("ejecutivo","Con gusto te conectamos con un ejecutivo 💬 Cuéntanos tu consulta:");
+    else go("ejecutivo","Con gusto te conectamos con un ejecutivo 💬 Primero cuéntanos tu consulta:");
+  };
+
+  const onAutoVehiculo=(d)=>{pushUser(`${d.marca} ${d.modelo} ${d.anio} · Patente: ${d.patente}`);setQuoteData(p=>({...p,...d}));go("auto_personal","Ahora los datos del **propietario legal**:");};
+  const onAutoPersonal=(d)=>{pushUser(`${d.nombre} · RUT: ${d.rut} · ${d.comuna}`);setQuoteData(p=>({...p,...d}));go("auto_cobertura","¿Qué tipo de cobertura te interesa?");};
+  const onAutoCobertura=(o)=>{pushUser(`${o.emoji} ${o.label}`);setQuoteData(p=>({...p,cobertura:o.label}));go("contacto","Casi listo 🎉 ¿Cómo prefieres que te enviemos la cotización?");};
+
+  const onHogarPersonal=(d)=>{pushUser(`${d.nombre} · RUT: ${d.rut}`);setQuoteData(p=>({...p,...d}));go("hogar_direccion","Ahora la **dirección** del inmueble:");};
+  const onHogarDireccion=(d)=>{const addr=[d.calle,d.numero,d.depto,d.estacionamiento&&`Est. ${d.estacionamiento}`,d.bodega&&`Bod. ${d.bodega}`,d.comuna].filter(Boolean).join(", ");pushUser(addr);setQuoteData(p=>({...p,...d}));go("hogar_detalle","Detalles del inmueble:");};
+  const onHogarDetalle=(d)=>{pushUser(`${d.tipo} · ${d.construccion} · ${d.uso} · ${d.ubicacion} · ${d.pisos} piso(s) · Año: ${d.anio} · Hipotecario: ${d.hipotecario}`);setQuoteData(p=>({...p,...d}));go("hogar_montos","**Montos asegurados** en UF:");};
+  const onHogarMontos=(d)=>{pushUser(`Edificio: UF ${d.montoEdificio} · Contenido: UF ${d.montoContenido}`);setQuoteData(p=>({...p,...d}));go("contacto","¿Cómo prefieres que te enviemos la cotización?");};
+
+  const onCondContratante=(d)=>{pushUser(`${d.contratante} · RUT: ${d.rut}`);setQuoteData(p=>({...p,...d}));go("cond_direccion","**Dirección** del condominio:");};
+  const onCondDireccion=(d)=>{pushUser(d.direccion);setQuoteData(p=>({...p,...d}));go("cond_detalle","Detalles del condominio:");};
+  const onCondDetalle=(d)=>{pushUser(`${d.uso} · Año: ${d.anio} · ${d.torres} torre(s) · ${d.pisos} pisos · ${d.subterraneos} subterráneo(s) · ${d.unidades} uds. · Asc: ${d.ascensores==="Sí"?d.cantAscensores:"No"} · Piscina: ${d.piscina} · Locales: ${d.locales}`);setQuoteData(p=>({...p,...d}));go("cond_seguridad","Medidas de **seguridad** del condominio:");};
+  const onCondSeguridad=(d)=>{pushUser(`Seguridad: ${d.medidas}`);setQuoteData(p=>({...p,...d}));go("cond_montos","**Montos asegurados** en UF:");};
+  const onCondMontos=(d)=>{pushUser(`Espacios comunes: UF ${d.montoEspacios} · Deptos: UF ${d.montoDeptos}`);setQuoteData(p=>({...p,...d}));go("contacto","¿Cómo prefieres que te enviemos la cotización?");};
+
+  const onContacto=async(data)=>{
+    pushUser(data.canal==="email"?`📧 ${data.value}`:`💬 ${data.value}`);
+    const firstName=(quoteData.nombre||quoteData.contratante||"").split(" ")[0];
+    const tipoLabel=quoteType==="auto"?"seguro de auto":quoteType==="hogar"?"seguro hogar":"seguro condominio";
+    const final={...quoteData,tipo_seguro:tipoLabel,canal:data.canal,contacto:data.value,timestamp:new Date().toLocaleString("es-CL")};
+    setStep("done");setLoading(true);
+    await sendToSheets(final);
+    setLoading(false);
+    pushBot(`¡Listo${firstName?", "+firstName:""}! ✅\n\nUn ejecutivo de **Patriva** revisará tu solicitud de **${tipoLabel}** y te enviará la cotización al ${data.canal==="email"?"correo":"WhatsApp"} que indicaste.\n\n¡Gracias por confiar en Patriva!`);
+  };
+
+
+  const onEjecutivo=async(data)=>{
+    pushUser(`${data.nombre} · ${data.canal==="email"?"📧":"💬"} ${data.contacto}\n"${data.consulta}"`);
+    const final={
+      tipo_seguro:"contacto ejecutivo",
+      nombre:data.nombre,
+      consulta:data.consulta,
+      canal:data.canal,
+      contacto:data.contacto,
+      timestamp:new Date().toLocaleString("es-CL")
+    };
+    setStep("done");setLoading(true);
+    await sendToSheets(final);
+    setLoading(false);
+    pushBot(`¡Gracias, ${data.nombre.split(" ")[0]}! 👍\n\nUn ejecutivo de **Patriva** se pondrá en contacto contigo a la brevedad por ${data.canal==="email"?"correo":"WhatsApp"}.`);
+  };
+
+  const handleFaq=async()=>{
+    if(!faqInput.trim()) return;
+    const q=faqInput.trim();setFaqInput("");pushUser(q);setLoading(true);
+    const resp=await callClaude(q);setLoading(false);pushBot(resp);
+  };
+
+  const reset=()=>{setChatLog([]);setStep("menu");setQuoteData({});setQuoteType(null);setFaqInput("");setTimeout(()=>pushBot("¡Hola! Bienvenido/a a **Patriva** 🏠\n\nSoy tu asesor digital de seguros. ¿En qué te puedo ayudar hoy?"),80);};
+
+  return <>
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{background:#0a0a0a;font-family:'DM Sans',sans-serif;}
+      input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+      @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+      @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+      ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:4px}
+      input::placeholder{color:#3a3a3a}input{caret-color:#00c853}
+    `}</style>
+
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,background:"#0a0a0a"}}>
+      <div style={{width:"100%",maxWidth:430,height:"88vh",maxHeight:720,background:C.surface,borderRadius:24,border:`1px solid ${C.border}`,boxShadow:`0 30px 80px rgba(0,0,0,0.8),0 0 40px rgba(0,200,83,0.04)`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+        {/* HEADER */}
+        <div style={{padding:"14px 18px",background:C.bg,borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:12,background:`linear-gradient(135deg,${C.green},${C.greenDark})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,boxShadow:`0 4px 16px ${C.greenGlow}`}}>🏠</div>
+            <div>
+              <div style={{color:C.text,fontWeight:700,fontSize:17,letterSpacing:"-0.5px",lineHeight:1}}>Patriva</div>
+              <div style={{color:C.green,fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",marginTop:2}}>Tu asesor de seguros</div>
+              <div style={{display:"flex",alignItems:"center",gap:5,marginTop:3}}>
+                <div style={{width:6,height:6,borderRadius:"50%",background:"#00e676",boxShadow:"0 0 6px #00e676"}}/>
+                <span style={{color:C.textDim,fontSize:11}}>Asistente en línea</span>
+              </div>
+            </div>
+          </div>
+          <button onClick={reset} style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:8,color:C.textDim,fontSize:11,fontWeight:600,padding:"5px 11px",cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.target.style.borderColor=C.border;e.target.style.color=C.textMid;}} onMouseLeave={e=>{e.target.style.borderColor="#2a2a2a";e.target.style.color=C.textDim;}}>Nueva consulta</button>
+        </div>
+
+        {/* MESSAGES */}
+        <div style={{flex:1,overflowY:"auto",padding:"18px 16px",background:"#141414"}}>
+          {chatLog.map((msg,i)=>msg.role==="bot"?<BotMsg key={i}><RichText text={msg.content}/></BotMsg>:<UserMsg key={i}>{msg.content}</UserMsg>)}
+          {loading&&<div style={{display:"flex",gap:10,marginBottom:14}}><BotAvatar/><TypingDots/></div>}
+          {!loading&&<div style={{paddingLeft:44}}>
+            {step==="menu"&&<div style={{animation:"fadeUp 0.3s ease"}}><div style={{color:C.textDim,fontSize:11,textAlign:"center",marginBottom:10,letterSpacing:"0.06em"}}>— ¿Qué necesitas? —</div>{MAIN_MENU.map(item=><MenuBtn key={item.id} item={item} onClick={handleMenu}/>)}</div>}
+            {step==="auto_vehiculo"&&<StepAutoVehiculo onSubmit={onAutoVehiculo}/>}
+            {step==="auto_personal"&&<StepAutoPersonal onSubmit={onAutoPersonal}/>}
+            {step==="auto_cobertura"&&<StepAutoCobertura onSubmit={onAutoCobertura}/>}
+            {step==="hogar_personal"&&<StepHogarPersonal onSubmit={onHogarPersonal}/>}
+            {step==="hogar_direccion"&&<StepHogarDireccion onSubmit={onHogarDireccion}/>}
+            {step==="hogar_detalle"&&<StepHogarDetalle onSubmit={onHogarDetalle}/>}
+            {step==="hogar_montos"&&<StepHogarMontos onSubmit={onHogarMontos}/>}
+            {step==="cond_contratante"&&<StepCondContratante onSubmit={onCondContratante}/>}
+            {step==="cond_direccion"&&<StepCondDireccion onSubmit={onCondDireccion}/>}
+            {step==="cond_detalle"&&<StepCondDetalle onSubmit={onCondDetalle}/>}
+            {step==="cond_seguridad"&&<StepCondSeguridad onSubmit={onCondSeguridad}/>}
+            {step==="cond_montos"&&<StepCondMontos onSubmit={onCondMontos}/>}
+            {step==="contacto"&&<StepContacto onSubmit={onContacto}/>}
+            {step==="ejecutivo"&&<StepEjecutivo onSubmit={onEjecutivo}/>}
+            {step==="done"&&<div style={{animation:"fadeUp 0.3s ease",marginTop:4}}><ActionBtn onClick={reset} variant="secondary">Hacer otra consulta</ActionBtn></div>}
+          </div>}
+          <div ref={bottomRef}/>
+        </div>
+
+
+      </div>
+    </div>
+  </>;
+}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
