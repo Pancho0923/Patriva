@@ -7,7 +7,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -18,18 +17,14 @@
     @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
     ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:4px}
     input::placeholder{color:#3a3a3a} input{caret-color:#00c853}
-    textarea::placeholder{color:#3a3a3a}
   </style>
 </head>
 <body>
   <div id="root"></div>
-  <script>
-    emailjs.init("ntzS4ZJQQY0895AKB");
-  </script>
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
 
-const EMAILJS_SERVICE  = "service_t60e62s";
+const EMAILJS_SERVICE  = "service_0ye4jmo";
 const EMAILJS_TEMPLATE = "template_bbf5dkr";
 const EMAILJS_KEY      = "ntzS4ZJQQY0895AKB";
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyoJEd71AL7pvpojizHyecYCTKHFshNclKeocmkaX1_08pHsgS1gugH7Fo_EX0_-GwK4g/exec";
